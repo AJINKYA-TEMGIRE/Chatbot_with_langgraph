@@ -2,12 +2,13 @@ from langgraph.graph import StateGraph, START
 from typing import TypedDict, Annotated
 from langchain_core.messages import BaseMessage, HumanMessage
 from langgraph.graph.message import add_messages
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_groq import ChatGroq
 from dotenv import load_dotenv
 from langgraph.prebuilt import ToolNode, tools_condition
-from langchain_community.tools import DuckDuckGoSearchRun
 from langchain.tools import tool
 from ddgs import DDGS
+import sqlite3
 
 
 
@@ -42,6 +43,9 @@ def chat_node(state: ChatState):
 
 tool_node = ToolNode(tools) 
 
+conn = sqlite3.connect(database="chatbot.db", check_same_thread=False)
+checkpointer = SqliteSaver(conn=conn)
+
 graph = StateGraph(ChatState)
 graph.add_node("chat_node", chat_node)
 graph.add_node("tools", tool_node)
@@ -52,10 +56,16 @@ graph.add_conditional_edges("chat_node", tools_condition)
 graph.add_edge("tools", "chat_node") 
 
 
-chatbot = graph.compile()
+chatbot = graph.compile(checkpointer=checkpointer)
 
-out = chatbot.invoke({"messages": [HumanMessage(content = "Please tell todays news about india.")]})
-print(out["messages"][-1].content)
+# out = chatbot.invoke({"messages": [HumanMessage(content = "Please tell todays news about india.")]})
+# print(out["messages"][-1].content)
+
+def retrieve_all_threads():
+    all_threads = set()
+    for checkpoint in checkpointer.list(None):
+        all_threads.add(checkpoint.config["configurable"]["thread_id"])
+    return list(all_threads)
 
 
 
